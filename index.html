@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>姐弟实时共享记账</title>
+<script src="https://cdn.jsdelivr.net/npm/@cloudbase/js-sdk/1.7.1/cloudbase.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:"苹方",sans-serif;}
+body{background:#f5f7fa;max-width:700px;margin:0 auto;padding:15px;}
+.box{background:#fff;border-radius:12px;padding:20px;margin-bottom:15px;box-shadow:0 2px 8px rgba(0,0,0,0.08);}
+h2{text-align:center;color:#333;margin-bottom:20px;}
+input,select,button{width:100%;padding:12px;margin:6px 0;border:1px solid #ddd;border-radius:8px;font-size:15px;}
+button{background:#1677ff;color:#fff;border:none;cursor:pointer;}
+button:hover{background:#0e60d3;}
+.total{font-size:18px;color:#e53935;font-weight:bold;margin:10px 0;}
+.tag{display:inline-block;background:#e3f2fd;padding:6px 10px;border-radius:20px;font-size:13px;margin:4px;}
+.item{padding:12px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;}
+.item-info{flex:1;}
+.money{color:#e53935;font-weight:bold;}
+.del{background:#f44336;padding:5px 8px;font-size:12px;width:auto;}
+.login-wrap{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;display:flex;align-items:center;justify-content:center;z-index:999;}
+</style>
+</head>
+<body>
+
+<!-- 登录页（密码保护） -->
+<div class="login-wrap" id="loginBox">
+  <div class="box" style="width:90%;max-width:400px;">
+    <h2>🔐 姐弟记账本登录</h2>
+    <input type="password" id="pwd" placeholder="输入共享密码">
+    <button onclick="checkPwd()">进入账本</button>
+  </div>
+</div>
+
+<!-- 主记账页面 -->
+<div id="mainBox" style="display:none;">
+  <div class="box">
+    <h2>💰 姐弟实时共享记账</h2>
+    <input type="number" id="money" placeholder="金额" step="0.01">
+    <input type="text" id="note" placeholder="备注（如：午饭、地铁）">
+    <select id="cate">
+      <option>餐饮</option><option>交通</option><option>购物</option>
+      <option>娱乐</option><option>医疗</option><option>住房</option><option>其他</option>
+    </select>
+    <button onclick="addBill()">添加记录（实时同步）</button>
+  </div>
+
+  <div class="box">
+    <div class="total" id="allTotal">总支出：¥0.00</div>
+    <div id="cateTotal"></div>
+  </div>
+
+  <div class="box">
+    <div id="list"></div>
+  </div>
+</div>
+
+<script>
+// ============ 【只改这里！替换成你的配置】 ============
+// 1. 你和弟弟的共享密码（改成你们的专属密码，比如生日）
+const SHARE_PWD = "111"; 
+// 2. 替换成你从腾讯云复制的3个配置
+const tcbConfig = {
+  env: "test1-1-6gy0zzsw178c9207", // 替换：env-xxxxxx
+  secretId: "AKID69iWBk6GLNHyHXov38B5b7Tct240mV5U", // 替换：AKIDxxxx
+  secretKey: "C90qWxKZbRDqE8953685wdDZmlX6QXPB" // 替换：xxxx
+};
+// ======================================================
+
+// 初始化腾讯云开发
+const app = cloudbase.init(tcbConfig);
+const db = app.database();
+const billCol = db.collection("bill");
+
+// 密码验证登录
+function checkPwd(){
+  let inputPwd = document.getElementById("pwd").value;
+  if(inputPwd === SHARE_PWD){
+    document.getElementById("loginBox").style.display = "none";
+    document.getElementById("mainBox").style.display = "block";
+    // 开启实时监听（你记一笔，弟弟立刻看见）
+    listenBill();
+  }else{
+    alert("密码错误！请和弟弟核对共享密码");
+  }
+}
+
+// 实时监听账单数据（核心同步功能）
+function listenBill(){
+  billCol.orderBy("time", "desc").watch({
+    onChange: (snapshot) => {
+      renderList(snapshot.docs.map(doc => ({...doc.data, _id: doc._id})));
+    },
+    onError: (err) => {
+      console.error("同步失败：", err);
+      alert("数据同步异常，请检查网络");
+    }
+  });
+}
+
+// 添加记账记录
+async function addBill(){
+  const money = parseFloat(document.getElementById("money").value);
+  const note = document.getElementById("note").value.trim() || "无备注";
+  const cate = document.getElementById("cate").value;
+  
+  if(!money || money <= 0){
+    alert("请输入正确的金额（大于0）");
+    return;
+  }
+
+  try {
+    await billCol.add({
+      money,
+      note,
+      cate,
+      time: Date.now(),
+      timeStr: new Date().toLocaleString()
+    });
+    // 清空输入框
+    document.getElementById("money").value = "";
+    document.getElementById("note").value = "";
+  } catch (err) {
+    alert("添加失败：" + err.message);
+  }
+}
+
+// 渲染账单列表+统计
+function renderList(list){
+  let listHtml = "";
+  let totalMoney = 0;
+  const cateStat = {};
+
+  list.forEach(item => {
+    totalMoney += item.money;
+    cateStat[item.cate] = (cateStat[item.cate] || 0) + item.money;
+    listHtml += `
+    <div class="item">
+      <div class="item-info">
+        <div>${item.note}</div>
+        <div style="font-size:12px;color:#666">${item.cate} · ${item.timeStr}</div>
+      </div>
+      <div class="money">¥${item.money.toFixed(2)}</div>
+      <button class="del" onclick="deleteBill('${item._id}')">删</button>
+    </div>
+    `;
+  });
+
+  // 渲染列表
+  document.getElementById("list").innerHTML = listHtml || "<div style='text-align:center;padding:20px;color:#999'>暂无记账记录</div>";
+  // 渲染总支出
+  document.getElementById("allTotal").innerText = `总支出：¥${totalMoney.toFixed(2)}`;
+  // 渲染分类统计
+  let cateHtml = "";
+  for(const cate in cateStat){
+    cateHtml += `<span class="tag">${cate}：¥${cateStat[cate].toFixed(2)}</span>`;
+  }
+  document.getElementById("cateTotal").innerHTML = cateHtml;
+}
+
+// 删除记账记录（双方同步删除）
+async function deleteBill(id){
+  if(confirm("确定删除这条记录？双方都会同步删除！")){
+    try {
+      await billCol.doc(id).remove();
+    } catch (err) {
+      alert("删除失败：" + err.message);
+    }
+  }
+}
+</script>
+</body>
+</html>

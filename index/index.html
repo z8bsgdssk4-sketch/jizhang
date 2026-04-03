@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>姐弟记账本</title>
+<style>
+    * {box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif;}
+    body {background: #f5f5f5; padding: 20px; max-width: 500px; margin: 0 auto;}
+    .box {background: white; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);}
+    h2 {color: #333; margin-bottom: 15px; text-align: center;}
+    input, select, button {width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;}
+    button {background: #42b983; color: white; border: none; cursor: pointer; font-weight: bold;}
+    button.del {background: #f56c6c;}
+    .item {display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee;}
+    .total {font-size: 18px; font-weight: bold; color: #e64340; text-align: right; margin-top: 10px;}
+    #loginBox {margin-top: 50px;}
+</style>
+</head>
+
+<body>
+<div id="loginBox" class="box">
+    <h2>🔐 姐弟记账本登录</h2>
+    <input type="password" id="pwdInput" placeholder="111">
+    <button onclick="checkPwd()">进入账本</button>
+</div>
+
+<div id="mainBox" class="box" style="display:none;">
+    <h2>🧾 姐弟共享记账本</h2>
+    <input type="number" id="money" placeholder="金额" step="0.01">
+    <select id="type">
+        <option>餐饮</option>
+        <option>交通</option>
+        <option>购物</option>
+        <option>娱乐</option>
+        <option>其他</option>
+    </select>
+    <button onclick="addBill()">添加记录</button>
+    <div id="list"></div>
+    <div class="total">总支出：¥ <span id="total">0</span></div>
+</div>
+
+<script src="https://imgcache.qq.com/qcloud/tcbjs/1.13.6/tcb-js-sdk.min.js"></script>
+<script>
+// ==============================================
+//   只需要改这里！把你的信息填进去
+// ==============================================
+const SHARE_PWD = "123456"; // 你和弟弟的密码，自己改
+
+const tcbConfig = {
+    env: "test1-1-6gy0zzsw178c9207",
+    secretId: "AKID69iWBk6GLNHyHXov38B5b7Tct240mV5U",
+    secretKey: "C90qWxKZbRDqE8953685wdDZmlX6QXPB"
+};
+
+// ==============================================
+// 下面代码别动！已经修复好，不会报错
+// ==============================================
+let app, db, bill;
+
+async function initDB() {
+    try {
+        app = tcb.init(tcbConfig);
+        db = app.database();
+        bill = db.collection("bill"); // 集合名：bill
+        console.log("数据库初始化成功 ✅");
+    } catch (e) {
+        console.error("初始化失败", e);
+        alert("数据库连接失败，请检查配置");
+    }
+}
+
+function checkPwd() {
+    const val = document.getElementById("pwdInput").value;
+    if (val === SHARE_PWD) {
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("mainBox").style.display = "block";
+        initDB().then(() => getList());
+    } else {
+        alert("密码错误");
+    }
+}
+
+async function addBill() {
+    const money = document.getElementById("money").value;
+    const type = document.getElementById("type").value;
+    if (!money) return alert("请输入金额");
+
+    try {
+        await bill.add({
+            money: parseFloat(money),
+            type: type,
+            time: new Date().toLocaleString()
+        });
+        document.getElementById("money").value = "";
+        getList();
+    } catch (e) {
+        console.error(e);
+        alert("添加失败：" + e.message);
+    }
+}
+
+async function getList() {
+    try {
+        const res = await bill.orderBy("time", "desc").get();
+        const list = res.data;
+        let total = 0;
+        let html = "";
+
+        list.forEach(item => {
+            total += item.money;
+            html += `
+            <div class="item">
+                <div>${item.type} · ${item.time}</div>
+                <div>¥ ${item.money.toFixed(2)}</div>
+            </div>`;
+        });
+
+        document.getElementById("list").innerHTML = html;
+        document.getElementById("total").innerText = total.toFixed(2);
+    } catch (e) {
+        console.error(e);
+    }
+}
+</script>
+</body>
+</html>
